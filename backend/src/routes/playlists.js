@@ -1,17 +1,14 @@
 import express from 'express'
-import { supabaseAdmin } from '../config/supabase.js'
+import Playlist from '../models/Playlist.js'
+import Song from '../models/Song.js'
+import { authRequired, optionalAuth } from '../middleware/auth.js'
 
 const router = express.Router()
 
 router.get('/', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
-      .from('playlists')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-    res.json({ playlists: data || [] })
+    const playlists = await Playlist.find().sort({ created_at: -1 })
+    res.json({ playlists: playlists || [] })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -20,53 +17,36 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const { id } = req.params
-    const { data: playlist, error } = await supabaseAdmin
-      .from('playlists')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const playlist = await Playlist.findById(req.params.id).populate('songs.song')
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
 
-    if (error) throw error
+    const orderedSongs = [...(playlist.songs || [])]
+      .sort((a, b) => a.position - b.position)
+      .map(ps => ps.song)
+      .filter(Boolean)
 
-    const { data: playlistSongs } = await supabaseAdmin
-      .from('playlist_songs')
-      .select('song_id, position')
-      .eq('playlist_id', id)
-      .order('position')
-
-    if (playlistSongs?.length > 0) {
-      const songIds = playlistSongs.map(ps => ps.song_id)
-      const { data: songs } = await supabaseAdmin
-        .from('songs')
-        .select('*')
-        .in('id', songIds)
-
-      const songsMap = songs.reduce((acc, song) => ({ ...acc, [song.id]: song }), {})
-      const orderedSongs = playlistSongs.map(ps => songsMap[ps.song_id]).filter(Boolean)
-
-      return res.json({ playlist, songs: orderedSongs })
-    }
-
-    res.json({ playlist, songs: [] })
+    const playlistObj = playlist.toJSON()
+    delete playlistObj.songs
+    res.json({ playlist: playlistObj, songs: orderedSongs })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
   }
 })
 
-router.post('/', async (req, res) => {
+router.post('/', optionalAuth, async (req, res) => {
   try {
     const { name, description, cover_url, user_id } = req.body
 
-    const { data, error } = await supabaseAdmin
-      .from('playlists')
-      .insert([{ name, description, cover_url, user_id, is_public: true }])
-      .select()
-      .single()
+    const playlist = await Playlist.create({
+      name,
+      description,
+      cover_url,
+      user_id: req.userId || user_id || null,
+      is_public: true,
+    })
 
-    if (error) throw error
-    res.json({ playlist: data })
+    res.json({ playlist })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -75,18 +55,16 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { id } = req.params
     const { name, description, cover_url } = req.body
 
-    const { data, error } = await supabaseAdmin
-      .from('playlists')
-      .update({ name, description, cover_url })
-      .eq('id', id)
-      .select()
-      .single()
+    const playlist = await Playlist.findByIdAndUpdate(
+      req.params.id,
+      { name, description, cover_url },
+      { new: true }
+    )
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
 
-    if (error) throw error
-    res.json({ playlist: data })
+    res.json({ playlist })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -95,15 +73,7 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const { id } = req.params
-    await supabaseAdmin.from('playlist_songs').delete().eq('playlist_id', id)
-    
-    const { error } = await supabaseAdmin
-      .from('playlists')
-      .delete()
-      .eq('id', id)
-
-    if (error) throw error
+    await Playlist.findByIdAndDelete(req.params.id)
     res.json({ success: true })
   } catch (error) {
     console.error(error)
@@ -116,20 +86,22 @@ router.post('/:playlistId/songs', async (req, res) => {
     const { playlistId } = req.params
     const { songId } = req.body
 
-    const { data: existing } = await supabaseAdmin
-      .from('playlist_songs')
-      .select('position')
-      .eq('playlist_id', playlistId)
-      .order('position', { ascending: false })
-      .limit(1)
+    const playlist = await Playlist.findById(playlistId)
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
 
-    const position = existing?.length ? existing[0].position + 1 : 0
+    const songExists = await Song.exists({ _id: songId })
+    if (!songExists) return res.status(404).json({ error: 'Song not found' })
 
-    const { error } = await supabaseAdmin
-      .from('playlist_songs')
-      .insert([{ playlist_id: playlistId, song_id: songId, position }])
+    if (playlist.songs.some(ps => ps.song.toString() === songId)) {
+      return res.json({ success: true })
+    }
 
-    if (error) throw error
+    const position =
+      playlist.songs.length > 0 ? Math.max(...playlist.songs.map(ps => ps.position)) + 1 : 0
+
+    playlist.songs.push({ song: songId, position })
+    await playlist.save()
+
     res.json({ success: true })
   } catch (error) {
     console.error(error)
@@ -141,13 +113,10 @@ router.delete('/:playlistId/songs/:songId', async (req, res) => {
   try {
     const { playlistId, songId } = req.params
 
-    const { error } = await supabaseAdmin
-      .from('playlist_songs')
-      .delete()
-      .eq('playlist_id', playlistId)
-      .eq('song_id', songId)
+    await Playlist.findByIdAndUpdate(playlistId, {
+      $pull: { songs: { song: songId } },
+    })
 
-    if (error) throw error
     res.json({ success: true })
   } catch (error) {
     console.error(error)

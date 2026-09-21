@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Music } from 'lucide-react'
+import { Play, Pause, Music, Heart } from 'lucide-react'
 import { usePlayerStore } from '../../store/playerStore'
 
 const fallbackColors = [
@@ -12,8 +12,15 @@ const fallbackColors = [
   'from-indigo-500 to-blue-600',
 ]
 
-export default function SongCard({ song, index, onPlay }) {
-  const { currentSong, isPlaying, togglePlay } = usePlayerStore()
+const formatTime = (s) => {
+  if (!s || isNaN(s)) return ''
+  const mins = Math.floor(s / 60)
+  const secs = Math.floor(s % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+export default function SongCard({ song, index, onPlay, variant = 'card' }) {
+  const { currentSong, isPlaying, togglePlay, toggleLikeSong, isSongLiked } = usePlayerStore()
   const isCurrent = currentSong?.id === song.id
   const [imgError, setImgError] = useState(false)
   const [imgLoaded, setImgLoaded] = useState(false)
@@ -37,6 +44,71 @@ export default function SongCard({ song, index, onPlay }) {
   const artist = song.channel_name || song.artist
   const hasValidImage = cover && !imgError
   const fallbackColor = fallbackColors[(index || 0) % fallbackColors.length]
+
+  // Compact YouTube Music-style row
+  if (variant === 'row') {
+    const liked = isSongLiked(song.id)
+    return (
+      <div
+        onClick={handlePlay}
+        className={`group flex items-center gap-3 px-2 sm:px-3 py-2 rounded-lg hover:bg-white/[0.06] cursor-pointer transition-colors ${isCurrent ? 'bg-white/[0.04]' : ''}`}
+      >
+        <div className="w-6 flex items-center justify-center text-[#6e6e73] flex-shrink-0">
+          {isCurrent && isPlaying ? (
+            <div className="flex gap-0.5">
+              <span className="w-0.5 h-3 bg-[#fc3c44] rounded-full animate-pulse" />
+              <span className="w-0.5 h-3 bg-[#fc3c44] rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+              <span className="w-0.5 h-3 bg-[#fc3c44] rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+            </div>
+          ) : (
+            <>
+              <span className="group-hover:hidden text-[13px] tabular-nums">{(index || 0) + 1}</span>
+              {isCurrent ? (
+                <Pause size={14} className="hidden group-hover:block text-white" />
+              ) : (
+                <Play size={14} fill="currentColor" className="hidden group-hover:block text-white" />
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-white/[0.06]">
+          {hasValidImage ? (
+            <img
+              src={cover}
+              alt={song.title}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+              style={{ opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.3s ease' }}
+            />
+          ) : (
+            <div className={`w-full h-full bg-gradient-to-br ${fallbackColor} flex items-center justify-center`}>
+              <Music size={18} className="text-white/50" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-[14px] truncate ${isCurrent ? 'text-[#fc3c44]' : 'text-white'}`}>{song.title}</p>
+          <p className="text-[12px] text-[#a1a1a6] truncate mt-0.5">{artist || 'Unknown artist'}</p>
+        </div>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleLikeSong(song) }}
+          className="p-2 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity flex-shrink-0"
+          aria-label="Like"
+        >
+          <Heart size={15} className={liked ? 'text-[#fc3c44]' : 'text-[#a1a1a6] hover:text-white'} fill={liked ? '#fc3c44' : 'none'} />
+        </button>
+
+        <span className="text-[12px] text-[#6e6e73] tabular-nums w-10 text-right flex-shrink-0 hidden sm:block">
+          {formatTime(song.duration)}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <motion.div

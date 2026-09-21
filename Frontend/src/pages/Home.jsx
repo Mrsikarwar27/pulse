@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowRight, Heart, Play, Search, Plus, RefreshCw } from 'lucide-react'
+import { ArrowRight, Play, RefreshCw } from 'lucide-react'
 import { usePlayerStore } from '../store/playerStore'
-import { searchSongs, playSongFromYouTube } from '../services/youtube'
+import { searchSongs } from '../services/youtube'
 import SongCard from '../components/ui/SongCard'
 import ArtistCard from '../components/ui/ArtistCard'
-import PlaylistCard from '../components/ui/PlaylistCard'
 
 const categories = [
   { name: "Hindi Hits", query: "latest Hindi hits 2025" },
@@ -14,14 +13,6 @@ const categories = [
   { name: "Pop", query: "Hindi pop songs 2025" },
   { name: "Romantic", query: "Bollywood romantic songs 2025" },
   { name: "Party", query: "Bollywood party songs 2025" },
-]
-
-const artistsData = [
-  { id: 1, name: "Arijit Singh", image: "https://picsum.photos/seed/artist1/200" },
-  { id: 2, name: "Badshah", image: "https://picsum.photos/seed/artist2/200" },
-  { id: 3, name: "Diljit Dosanjh", image: "https://picsum.photos/seed/artist3/200" },
-  { id: 4, name: "Neha Kakkar", image: "https://picsum.photos/seed/artist4/200" },
-  { id: 5, name: "Guru Randhawa", image: "https://picsum.photos/seed/artist5/200" },
 ]
 
 const SectionHeader = ({ title, action, onAction }) => (
@@ -42,6 +33,22 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState(null)
   const [error, setError] = useState(null)
 
+  // Real artists derived from actually loaded songs (no mock data)
+  const popularArtists = useMemo(() => {
+    const seen = new Map()
+    Object.values(categorySongs).flat().forEach((song) => {
+      const name = song.channel_name
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.set(name.toLowerCase(), {
+          id: song.video_id || song.id,
+          name,
+          image: song.thumbnail,
+        })
+      }
+    })
+    return [...seen.values()].slice(0, 10)
+  }, [categorySongs])
+
   const fetchCategorySongs = async (category) => {
     const catName = category.name
 
@@ -53,29 +60,20 @@ export default function Home() {
     // Skip if already loaded (just show existing)
     if (categorySongs[catName]?.length > 0) {
       setActiveCategory(catName)
+      setError(null)
       return
     }
 
     setLoading(prev => ({ ...prev, [catName]: true }))
     setActiveCategory(catName)
-
-    console.log(`Fetching category: ${catName} with query: ${category.query}`)
+    setError(null)
 
     try {
       const songs = await searchSongs(category.query)
-      console.log(`Got ${songs?.length || 0} songs for ${catName}:`, songs)
 
       if (!Array.isArray(songs) || songs.length === 0) {
-        console.log(`No songs found for ${catName}, showing fallback`)
-        const fallback = Array.from({ length: 5 }).map((_, i) => ({
-          id: `fallback-${catName}-${i}`,
-          video_id: 'dQw4w9WgXcQ',
-          title: `${catName} Song ${i + 1}`,
-          channel_name: 'Sample Artist',
-          thumbnail: `https://picsum.photos/seed/${catName}${i}/300`,
-          duration: 180
-        }))
-        setCategorySongs(prev => ({ ...prev, [catName]: fallback }))
+        setCategorySongs(prev => ({ ...prev, [catName]: [] }))
+        setError(`No songs found for ${catName}. Please try again.`)
         setLoading(prev => ({ ...prev, [catName]: false }))
         return
       }
@@ -86,14 +84,14 @@ export default function Home() {
         title: song.title,
         channel_name: song.artist,
         thumbnail: song.thumbnail || `https://img.youtube.com/vi/${song.id}/mqdefault.jpg`,
-        duration: song.duration || 180
+        duration: song.duration || 180,
+        upload_date: song.upload_date || null,
       }))
 
-      console.log(`Mapped ${playableSongs.length} songs for ${catName}`)
       setCategorySongs(prev => ({ ...prev, [catName]: playableSongs }))
     } catch (error) {
-      console.error(`Failed to fetch ${catName}:`, error.message)
-      setError(error.message)
+      setCategorySongs(prev => ({ ...prev, [catName]: [] }))
+      setError(error.message || 'Failed to load songs')
     }
 
     setLoading(prev => ({ ...prev, [catName]: false }))
@@ -102,6 +100,21 @@ export default function Home() {
   const handleCategoryClick = (category) => {
     // Always fetch when clicking a category
     fetchCategorySongs(category)
+  }
+
+  // New Music shelf: real tracks sorted by actual YouTube upload date
+  const newReleases = useMemo(() => {
+    return Object.values(categorySongs)
+      .flat()
+      .filter(s => s && s.upload_date)
+      .sort((a, b) => String(b.upload_date).localeCompare(String(a.upload_date)))
+      .slice(0, 10)
+  }, [categorySongs])
+
+  const handlePlayNew = () => {
+    if (newReleases.length > 0) {
+      playSong(newReleases[0], newReleases)
+    }
   }
 
   const handlePlaySong = (song) => {
@@ -252,6 +265,30 @@ export default function Home() {
         </div>
       )}
 
+      {/* New Music - real latest releases sorted by YouTube upload date */}
+      {newReleases.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-[20px] sm:text-[22px] font-bold text-white">New Music</h2>
+              <p className="text-[13px] text-[#a1a1a6] mt-0.5">Latest releases from YouTube</p>
+            </div>
+            <button
+              onClick={handlePlayNew}
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-[13px] font-semibold hover:scale-105 active:scale-95 transition-transform flex-shrink-0 ml-3"
+            >
+              <Play size={14} fill="black" />
+              Play
+            </button>
+          </div>
+          <div className="max-w-3xl">
+            {newReleases.map((song, i) => (
+              <SongCard key={`new-${song.id}`} song={song} index={i} variant="row" onPlay={(s) => playSong(s, newReleases)} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Category Filter Pills */}
       <section style={{ padding: '12px 0' }}>
         <div className="flex flex-wrap" style={{ gap: '8px' }}>
@@ -300,25 +337,43 @@ export default function Home() {
             <div className="flex items-center justify-center py-12">
               <RefreshCw size={24} className="text-[#fc3c44] animate-spin" />
             </div>
-          ) : (
+          ) : categorySongs[activeCategory]?.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
               {categorySongs[activeCategory].map((song, i) => (
                 <SongCard key={song.id} song={song} index={i} onPlay={handlePlaySong} />
               ))}
             </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-[#a1a1a6] mb-4">No songs found for {activeCategory}.</p>
+              <button
+                onClick={() => {
+                  const cat = categories.find(c => c.name === activeCategory)
+                  if (cat) {
+                    setCategorySongs(prev => ({ ...prev, [activeCategory]: undefined }))
+                    fetchCategorySongs(cat)
+                  }
+                }}
+                className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[13px] font-medium transition-colors"
+              >
+                Retry
+              </button>
+            </div>
           )}
         </section>
       )}
 
-      {/* Trending Artists */}
+      {/* Trending Artists - derived from real loaded songs */}
+      {popularArtists.length > 0 && (
       <section>
         <SectionHeader title="Popular Artists" />
         <div className="flex gap-6 overflow-x-auto pb-2 no-scrollbar">
-          {artistsData.map((artist, i) => (
+          {popularArtists.map((artist, i) => (
             <ArtistCard key={artist.id} artist={artist} index={i} />
           ))}
         </div>
       </section>
+      )}
 
       {/* More Categories - Skeleton Loaders */}
       {categories.slice(1).map((cat) => (

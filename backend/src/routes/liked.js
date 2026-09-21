@@ -1,31 +1,17 @@
 import express from 'express'
-import { supabaseAdmin } from '../config/supabase.js'
+import LikedSong from '../models/LikedSong.js'
+import Song from '../models/Song.js'
+import { authRequired, optionalAuth } from '../middleware/auth.js'
 
 const router = express.Router()
 
-router.get('/', async (req, res) => {
+router.get('/', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: likedSongs, error } = await supabaseAdmin
-      .from('liked_songs')
-      .select('song_id, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
+    const likedSongs = await LikedSong.find({ user_id: req.userId }).sort({ created_at: -1 })
 
     if (likedSongs?.length > 0) {
       const songIds = likedSongs.map(ls => ls.song_id)
-      const { data: songs } = await supabaseAdmin
-        .from('songs')
-        .select('*')
-        .in('id', songIds)
-
+      const songs = await Song.find({ _id: { $in: songIds } })
       return res.json({ songs: songs || [] })
     }
 
@@ -36,24 +22,18 @@ router.get('/', async (req, res) => {
   }
 })
 
-router.post('/', async (req, res) => {
+router.post('/', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
     const { songId } = req.body
     if (!songId) return res.status(400).json({ error: 'songId is required' })
 
-    const { error } = await supabaseAdmin
-      .from('liked_songs')
-      .insert([{ user_id: user.id, song_id: songId }])
+    await LikedSong.updateOne(
+      { user_id: req.userId, song_id: songId },
+      { $setOnInsert: { user_id: req.userId, song_id: songId } },
+      { upsert: true }
+    )
 
-    if (error) throw error
-
-    await supabaseAdmin.rpc('increment_likes', { song_id: songId })
+    await Song.findByIdAndUpdate(songId, { $inc: { likes_count: 1 } })
 
     res.json({ success: true })
   } catch (error) {
@@ -62,23 +42,18 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.delete('/:songId', async (req, res) => {
+router.delete('/:songId', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
     const { songId } = req.params
 
-    const { error } = await supabaseAdmin
-      .from('liked_songs')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('song_id', songId)
+    const result = await LikedSong.deleteOne({ user_id: req.userId, song_id: songId })
+    if (result.deletedCount > 0) {
+      await Song.findByIdAndUpdate(songId, {
+        $inc: { likes_count: -1 },
+      })
+      await Song.updateOne({ _id: songId, likes_count: { $lt: 0 } }, { $set: { likes_count: 0 } })
+    }
 
-    if (error) throw error
     res.json({ success: true })
   } catch (error) {
     console.error(error)
@@ -86,22 +61,12 @@ router.delete('/:songId', async (req, res) => {
   }
 })
 
-router.get('/check/:songId', async (req, res) => {
+router.get('/check/:songId', optionalAuth, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.json({ isLiked: false })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.json({ isLiked: false })
+    if (!req.user) return res.json({ isLiked: false })
 
     const { songId } = req.params
-
-    const { data } = await supabaseAdmin
-      .from('liked_songs')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('song_id', songId)
-      .single()
+    const data = await LikedSong.findOne({ user_id: req.userId, song_id: songId })
 
     res.json({ isLiked: !!data })
   } catch (error) {

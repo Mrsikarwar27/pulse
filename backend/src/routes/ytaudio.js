@@ -16,7 +16,6 @@ router.get('/audio', async (req, res) => {
     const result = await ytdlp(
       `https://www.youtube.com/watch?v=${videoId}`,
       {
-        dumpSingleJson: true,
         noWarnings: true,
         noCallHome: true,
         format: 'bestaudio[ext=m4a]/bestaudio/best',
@@ -25,7 +24,9 @@ router.get('/audio', async (req, res) => {
       }
     )
 
-    const audioUrl = result.url || result.formats?.[0]?.url
+    const audioUrl = typeof result === 'string'
+      ? result.trim().split('\n')[0]
+      : (result.url || result.formats?.[0]?.url)
     
     if (!audioUrl) {
       // Fallback - try alternative method
@@ -44,9 +45,10 @@ router.get('/audio', async (req, res) => {
         }
       )
       
-      const bestFormat = fallback.formats?.find(f => 
-        f.audioExt === 'm4a' || f.audioExt === 'mp4'
-      )
+      const bestFormat = fallback.formats?.find(f => {
+        const audioExt = f.audio_ext || f.audioExt
+        return audioExt === 'm4a' || audioExt === 'mp4'
+      })
       
       if (bestFormat?.url) {
         return res.json({ audioUrl: bestFormat.url })

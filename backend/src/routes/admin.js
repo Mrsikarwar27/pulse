@@ -1,45 +1,26 @@
 import express from 'express'
-import { supabaseAdmin } from '../config/supabase.js'
+import Song from '../models/Song.js'
+import User, { toAuthUser } from '../models/User.js'
+import LikedSong from '../models/LikedSong.js'
+import { authRequired, adminRequired } from '../middleware/auth.js'
 
 const router = express.Router()
 
-const checkAdmin = async (req, res, next) => {
+router.use(authRequired, adminRequired)
+
+router.get('/stats', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
-    const isAdmin = user.user_metadata?.role === 'admin'
-    if (!isAdmin) return res.status(403).json({ error: 'Forbidden' })
-
-    req.user = user
-    next()
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-}
-
-router.get('/stats', checkAdmin, async (req, res) => {
-  try {
-    const { count: songCount } = await supabaseAdmin
-      .from('songs')
-      .select('*', { count: 'exact', head: true })
-
-    const { count: userCount } = await supabaseAdmin
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-
-    const { count: likeCount } = await supabaseAdmin
-      .from('liked_songs')
-      .select('*', { count: 'exact', head: true })
+    const [songCount, userCount, likeCount] = await Promise.all([
+      Song.countDocuments(),
+      User.countDocuments(),
+      LikedSong.countDocuments(),
+    ])
 
     res.json({
       totalSongs: songCount || 0,
       totalUsers: userCount || 0,
       totalLikes: likeCount || 0,
-      activeListeners: Math.floor(Math.random() * 50) + 10
+      activeListeners: Math.floor(Math.random() * 50) + 10,
     })
   } catch (error) {
     console.error(error)
@@ -47,29 +28,35 @@ router.get('/stats', checkAdmin, async (req, res) => {
   }
 })
 
-router.get('/users', checkAdmin, async (req, res) => {
+router.get('/users', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers()
-    if (error) throw error
-
-    res.json({ users: data?.users || [] })
+    const users = await User.find().sort({ created_at: -1 })
+    res.json({ users: users.map(toAuthUser) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
   }
 })
 
-router.put('/users/:id', checkAdmin, async (req, res) => {
+router.put('/users/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { role, metadata } = req.body
+    const { role, metadata, full_name, avatar_url } = req.body
 
-    const { data, error } = await supabaseAdmin.auth.admin.updateUser(id, {
-      data: { ...metadata, role }
-    })
+    const user = await User.findById(id)
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
-    if (error) throw error
-    res.json({ user: data.user })
+    if (role) user.role = role
+    const meta = metadata || {}
+    if (full_name !== undefined || meta.full_name !== undefined) {
+      user.fullName = full_name ?? meta.full_name
+    }
+    if (avatar_url !== undefined || meta.avatar_url !== undefined) {
+      user.avatarUrl = avatar_url ?? meta.avatar_url
+    }
+    await user.save()
+
+    res.json({ user: toAuthUser(user) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })

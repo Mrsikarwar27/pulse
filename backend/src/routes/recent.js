@@ -1,32 +1,19 @@
 import express from 'express'
-import { supabaseAdmin } from '../config/supabase.js'
+import RecentlyPlayed from '../models/RecentlyPlayed.js'
+import Song from '../models/Song.js'
+import { authRequired } from '../middleware/auth.js'
 
 const router = express.Router()
 
-router.get('/', async (req, res) => {
+router.get('/', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: recentSongs, error } = await supabaseAdmin
-      .from('recently_played')
-      .select('song_id, played_at')
-      .eq('user_id', user.id)
-      .order('played_at', { ascending: false })
+    const recentSongs = await RecentlyPlayed.find({ user_id: req.userId })
+      .sort({ played_at: -1 })
       .limit(50)
 
-    if (error) throw error
-
     if (recentSongs?.length > 0) {
-      const songIds = [...new Set(recentSongs.map(rs => rs.song_id))]
-      const { data: songs } = await supabaseAdmin
-        .from('songs')
-        .select('*')
-        .in('id', songIds)
-
+      const songIds = [...new Set(recentSongs.map(rs => rs.song_id.toString()))]
+      const songs = await Song.find({ _id: { $in: songIds } })
       return res.json({ songs: songs || [] })
     }
 
@@ -37,28 +24,14 @@ router.get('/', async (req, res) => {
   }
 })
 
-router.post('/', async (req, res) => {
+router.post('/', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
     const { songId } = req.body
     if (!songId) return res.status(400).json({ error: 'songId is required' })
 
-    await supabaseAdmin
-      .from('recently_played')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('song_id', songId)
+    await RecentlyPlayed.deleteOne({ user_id: req.userId, song_id: songId })
+    await RecentlyPlayed.create({ user_id: req.userId, song_id: songId, played_at: new Date() })
 
-    const { error } = await supabaseAdmin
-      .from('recently_played')
-      .insert([{ user_id: user.id, song_id: songId, played_at: new Date().toISOString() }])
-
-    if (error) throw error
     res.json({ success: true })
   } catch (error) {
     console.error(error)
@@ -66,20 +39,9 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.delete('/', async (req, res) => {
+router.delete('/', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { error } = await supabaseAdmin
-      .from('recently_played')
-      .delete()
-      .eq('user_id', user.id)
-
-    if (error) throw error
+    await RecentlyPlayed.deleteMany({ user_id: req.userId })
     res.json({ success: true })
   } catch (error) {
     console.error(error)

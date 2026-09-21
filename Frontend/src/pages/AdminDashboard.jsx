@@ -7,7 +7,7 @@ import SongCard from '../components/ui/SongCard'
 import { SongSkeleton } from '../components/ui/Skeleton'
 import { adminService, songService, playlistService } from '../services/api'
 import { useAuthStore } from '../store/playerStore'
-import { getFileUrl, uploadFile, supabase } from '../lib/supabase'
+import { uploadSongFiles } from '../lib/auth'
 
 export default function AdminDashboard() {
   const { isAdmin } = useAuthStore()
@@ -51,15 +51,7 @@ export default function AdminDashboard() {
 
     setUploading(true)
     try {
-      const timestamp = Date.now()
-      const audioPath = `songs/${timestamp}_${audioFile.name}`
-      const coverPath = `covers/${timestamp}_${coverFile.name}`
-
-      await uploadFile('audio', audioPath, audioFile)
-      await uploadFile('covers', coverPath, coverFile)
-
-      const audioUrl = getFileUrl('audio', audioPath)
-      const coverUrl = getFileUrl('covers', coverPath)
+      const { audioUrl, coverUrl } = await uploadSongFiles(audioFile, coverFile)
 
       await songService.create({
         ...formData,

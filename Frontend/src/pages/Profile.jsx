@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { User, Settings, Heart, LogOut, Music2, PlaySquare, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/playerStore'
-import { signOut } from '../lib/supabase'
+import { signOut } from '../lib/auth'
 
 export default function Profile() {
   const navigate = useNavigate()

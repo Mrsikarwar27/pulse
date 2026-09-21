@@ -14,7 +14,7 @@ import {
   X
 } from "lucide-react"
 import { useAuthStore } from "../../store/playerStore"
-import { signOut } from "../../lib/supabase"
+import { signOut } from "../../lib/auth"
 
 export default function Navbar({ onMenuClick }) {
   const navigate = useNavigate()

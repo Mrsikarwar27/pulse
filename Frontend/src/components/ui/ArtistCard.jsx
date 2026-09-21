@@ -5,7 +5,7 @@ export default function ArtistCard({ artist, index }) {
   const navigate = useNavigate()
 
   const handleClick = () => {
-    navigate(`/artist/${artist.id}`)
+    navigate(`/search?q=${encodeURIComponent(artist.name)}`)
   }
 
   return (

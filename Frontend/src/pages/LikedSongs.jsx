@@ -35,7 +35,7 @@ export default function LikedSongs() {
         
         <div className="flex-1">
           <span className="text-[12px] font-medium text-[#a1a1a6] uppercase tracking-wider">Playlist</span>
-          <h1 className="text-[40px] font-bold text-white mb-3">Liked Songs</h1>
+          <h1 className="text-[32px] md:text-[40px] font-bold text-white mb-3">Liked Songs</h1>
           <div className="flex items-center gap-3 text-[#a1a1a6] text-[14px]">
             <span>{likedSongs.length} songs</span>
             {likedSongs.length > 0 && (
@@ -69,7 +69,7 @@ export default function LikedSongs() {
         </div>
       ) : (
         <div className="space-y-1">
-          <div className="grid grid-cols-[auto,1fr,1fr,auto] gap-4 px-4 py-2 text-[11px] text-[#6e6e73] border-b border-white/[0.05]">
+          <div className="hidden md:grid grid-cols-[auto,1fr,1fr,auto] gap-4 px-4 py-2 text-[11px] text-[#6e6e73] border-b border-white/[0.05]">
             <span>#</span>
             <span>Title</span>
             <span>Album</span>
@@ -85,7 +85,7 @@ export default function LikedSongs() {
                 animate={{ opacity: 1 }}
                 transition={{ delay: i * 0.03 }}
                 onClick={() => isCurrent ? togglePlay() : playSong(song, likedSongs)}
-                className={`group grid grid-cols-[auto,1fr,1fr,auto] gap-4 px-4 py-2 rounded-lg hover:bg-white/[0.05] cursor-pointer ${isCurrent ? 'bg-white/[0.03]' : ''}`}
+                className={`group grid grid-cols-[auto,1fr,auto] md:grid-cols-[auto,1fr,1fr,auto] gap-4 px-4 py-2 rounded-lg hover:bg-white/[0.05] cursor-pointer ${isCurrent ? 'bg-white/[0.03]' : ''}`}
               >
                 <div className="w-8 flex items-center justify-center text-[#6e6e73]">
                   {isCurrent && isPlaying ? (

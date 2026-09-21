@@ -13,7 +13,7 @@ import Profile from './pages/Profile'
 import AdminDashboard from './pages/AdminDashboard'
 import RecentlyPlayed from './pages/RecentlyPlayed'
 import { useAuthStore } from './store/playerStore'
-import { supabase, getSession } from './lib/supabase'
+import { getSession } from './lib/auth'
 
 function ProtectedRoute({ children }) {
   const { user, isLoading } = useAuthStore()
@@ -62,22 +62,11 @@ export default function App() {
         localStorage.setItem('pulse_token', session.access_token)
       } else {
         setUser(null, null)
+        localStorage.removeItem('pulse_token')
       }
     }
 
     initAuth()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setUser(session.user, session)
-        localStorage.setItem('pulse_token', session.access_token)
-      } else {
-        setUser(null, null)
-        localStorage.removeItem('pulse_token')
-      }
-    })
-
-    return () => subscription.unsubscribe()
   }, [setUser])
 
   return (

@@ -1,18 +1,12 @@
 import express from 'express'
-import { supabaseAdmin } from '../config/supabase.js'
+import Song from '../models/Song.js'
 
 const router = express.Router()
 
 router.get('/', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
-      .from('songs')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-
-    res.json({ songs: data || [] })
+    const songs = await Song.find().sort({ created_at: -1 })
+    res.json({ songs: songs || [] })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -24,13 +18,10 @@ router.get('/search', async (req, res) => {
     const { q } = req.query
     if (!q) return res.json({ songs: [], artists: [] })
 
-    const { data: songs, error } = await supabaseAdmin
-      .from('songs')
-      .select('*')
-      .or(`title.ilike.%${q}%,artist.ilike.%${q}%,genre.ilike.%${q}%`)
-      .limit(20)
-
-    if (error) throw error
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    const songs = await Song.find({
+      $or: [{ title: regex }, { artist: regex }, { genre: regex }],
+    }).limit(20)
 
     const artists = [...new Set(songs.map(s => s.artist))].map(name => ({ name }))
 
@@ -43,16 +34,9 @@ router.get('/search', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const { id } = req.params
-    const { data, error } = await supabaseAdmin
-      .from('songs')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (error) throw error
-
-    res.json({ song: data })
+    const song = await Song.findById(req.params.id)
+    if (!song) return res.status(404).json({ error: 'Song not found' })
+    res.json({ song })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -63,15 +47,18 @@ router.post('/', async (req, res) => {
   try {
     const { title, artist, genre, cover_url, audio_url, duration } = req.body
 
-    const { data, error } = await supabaseAdmin
-      .from('songs')
-      .insert([{ title, artist, genre, cover_url, audio_url, duration, play_count: 0, likes_count: 0 }])
-      .select()
-      .single()
+    const song = await Song.create({
+      title,
+      artist,
+      genre,
+      cover_url,
+      audio_url,
+      duration,
+      play_count: 0,
+      likes_count: 0,
+    })
 
-    if (error) throw error
-
-    res.json({ song: data })
+    res.json({ song })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -80,19 +67,16 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { id } = req.params
     const { title, artist, genre, cover_url, audio_url, duration } = req.body
 
-    const { data, error } = await supabaseAdmin
-      .from('songs')
-      .update({ title, artist, genre, cover_url, audio_url, duration })
-      .eq('id', id)
-      .select()
-      .single()
+    const song = await Song.findByIdAndUpdate(
+      req.params.id,
+      { title, artist, genre, cover_url, audio_url, duration },
+      { new: true }
+    )
+    if (!song) return res.status(404).json({ error: 'Song not found' })
 
-    if (error) throw error
-
-    res.json({ song: data })
+    res.json({ song })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
@@ -101,14 +85,7 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const { id } = req.params
-    const { error } = await supabaseAdmin
-      .from('songs')
-      .delete()
-      .eq('id', id)
-
-    if (error) throw error
-
+    await Song.findByIdAndDelete(req.params.id)
     res.json({ success: true })
   } catch (error) {
     console.error(error)
@@ -118,21 +95,7 @@ router.delete('/:id', async (req, res) => {
 
 router.post('/:id/play', async (req, res) => {
   try {
-    const { id } = req.params
-
-    const { data: song } = await supabaseAdmin
-      .from('songs')
-      .select('play_count')
-      .eq('id', id)
-      .single()
-
-    const { error } = await supabaseAdmin
-      .from('songs')
-      .update({ play_count: (song?.play_count || 0) + 1 })
-      .eq('id', id)
-
-    if (error) throw error
-
+    await Song.findByIdAndUpdate(req.params.id, { $inc: { play_count: 1 } })
     res.json({ success: true })
   } catch (error) {
     console.error(error)

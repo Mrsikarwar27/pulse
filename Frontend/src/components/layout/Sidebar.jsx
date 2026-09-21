@@ -5,19 +5,16 @@ import {
   Heart,
   PlaySquare,
   Clock,
-  Plus,
   Music2,
-  Radio,
   LogOut,
   User
 } from "lucide-react"
 import { useAuthStore } from "../../store/playerStore"
-import { signOut } from "../../lib/supabase"
+import { signOut } from "../../lib/auth"
 
 const navItems = [
   { icon: Home, label: 'Home', path: '/' },
-  { icon: Search, label: 'Browse', path: '/search' },
-  { icon: Radio, label: 'Radio', path: '/radio' },
+  { icon: Search, label: 'Explore', path: '/search' },
 ]
 
 const libraryItems = [

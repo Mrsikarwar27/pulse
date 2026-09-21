@@ -1,72 +1,48 @@
 import express from 'express'
-import { supabaseAdmin } from '../config/supabase.js'
+import LikedSong from '../models/LikedSong.js'
+import Playlist from '../models/Playlist.js'
+import RecentlyPlayed from '../models/RecentlyPlayed.js'
+import { toAuthUser } from '../models/User.js'
+import { authRequired } from '../middleware/auth.js'
 
 const router = express.Router()
 
-router.get('/profile', async (req, res) => {
+router.get('/profile', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
-    res.json({ user })
+    res.json({ user: toAuthUser(req.user) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
   }
 })
 
-router.put('/profile', async (req, res) => {
+router.put('/profile', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
     const { full_name, avatar_url } = req.body
 
-    const { data, error } = await supabaseAdmin.auth.admin.updateUser(user.id, {
-      data: { full_name, avatar_url }
-    })
+    if (full_name !== undefined) req.user.fullName = full_name
+    if (avatar_url !== undefined) req.user.avatarUrl = avatar_url
+    await req.user.save()
 
-    if (error) throw error
-    res.json({ user: data.user })
+    res.json({ user: toAuthUser(req.user) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
   }
 })
 
-router.get('/stats', async (req, res) => {
+router.get('/stats', authRequired, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { count: likedCount } = await supabaseAdmin
-      .from('liked_songs')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-
-    const { count: playlistCount } = await supabaseAdmin
-      .from('playlists')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-
-    const { count: recentCount } = await supabaseAdmin
-      .from('recently_played')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
+    const [likedCount, playlistCount, recentCount] = await Promise.all([
+      LikedSong.countDocuments({ user_id: req.userId }),
+      Playlist.countDocuments({ user_id: req.userId }),
+      RecentlyPlayed.countDocuments({ user_id: req.userId }),
+    ])
 
     res.json({
       totalSongs: recentCount || 0,
       likedSongs: likedCount || 0,
-      playlists: playlistCount || 0
+      playlists: playlistCount || 0,
     })
   } catch (error) {
     console.error(error)

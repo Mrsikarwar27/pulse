@@ -50,6 +50,7 @@ router.get('/search', async (req, res) => {
         thumbnail: entry.thumbnail || `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
         duration: entry.duration,
         url: entry.url,
+        upload_date: entry.upload_date || entry.release_date || null,
       }))
 
     res.json({ songs })
@@ -87,6 +88,7 @@ router.get('/info', async (req, res) => {
       duration: entry.duration,
       url: entry.url,
       description: entry.description,
+      upload_date: entry.upload_date || entry.release_date || null,
     })
   } catch (err) {
     console.error('yt-dlp error:', err.message)
